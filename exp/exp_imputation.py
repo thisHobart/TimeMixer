@@ -189,6 +189,9 @@ class Exp_Imputation(Exp_Basic):
                 batch_x = batch_x.float().to(self.device)
                 batch_x_mark = batch_x_mark.float().to(self.device)
 
+                fill_value = batch_x[batch_x != 0].mean() 
+                batch_x = batch_x.masked_fill(batch_x == 0, fill_value)
+
                 # random mask
                 B, T, N = batch_x.shape
                 mask = torch.rand((B, T, N)).to(self.device)

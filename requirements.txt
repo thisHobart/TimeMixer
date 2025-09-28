@@ -12,3 +12,4 @@ torch==1.7.1
 tqdm==4.64.0
 # only test latest version of sktime
 sktime==0.29.1; python_version == "3.8"
+PyWavelets
