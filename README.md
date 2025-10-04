@@ -52,7 +52,7 @@
 
 # Updates
 
-🚩 **News** (2024.10): TimeMixer has been included in **[PyPOTS](https://pypots.com/)**. Many thanks to the PyPOTS team.
+🚩 **News** (2024.10): TimeMixer series has been included in **[PyPOTS](https://pypots.com/)**. Many thanks to the PyPOTS team.
 
 🚩 **News** (2024.10): We have newly released **[TimeMixer++](https://arxiv.org/abs/2410.16032)** as an upgraded version of TimeMixer. **TimeMixer++ is a time series pattern machine** that employs multi-scale and multi-resolution pattern extraction to **achieve 🏆state-of-the-art across 8 diverse analytical tasks!** 
 
@@ -243,10 +243,5 @@ We appreciate the following GitHub repos a lot for their valuable code and effor
 
 If you have any questions or want to use the code, feel free to contact:
 
-Current:
 * Jiawei Li (jarvis-li@outlook.com or jli226@connect.hkust-gz.edu.cn)
 * Kevin Liu (kevinliu2000@163.com)
-
-Previous:
-* Shiyu Wang (weiming.wsy@antgroup.com)
-* Haixu Wu (wuhx23@mails.tsinghua.edu.cn)
