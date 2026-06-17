@@ -6,10 +6,9 @@ patool==1.12
 reformer_pytorch==1.4.4
 scikit_learn==1.2.1
 scipy==1.8.0
-sktime==0.4.1
+sktime==0.29.1
 sympy==1.11.1
 torch==1.7.1
 tqdm==4.64.0
 # only test latest version of sktime
-sktime==0.29.1; python_version == "3.8"
-PyWavelets==1.9.0
+PyWavelets==1.4.1

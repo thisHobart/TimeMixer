@@ -13,7 +13,7 @@ train_epochs=10
 patience=10
 batch_size=16
 
-python -u run.py \
+.\.venv\python.exe -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
   --root_path  ./dataset/ETT-small/\
@@ -40,6 +40,7 @@ python -u run.py \
   --down_sampling_method avg \
   --down_sampling_window $down_sampling_window
 
+.\.venv\python.exe -u run.py --task_name long_term_forecast --is_training 1 --root_path ./dataset/ETT-small/ --data_path ETTh1.csv --model_id ETTh1_96_96 --model TimeMixer --data ETTh1 --features M --seq_len 96 --label_len 0 --pred_len 96 --e_layers 2 --enc_in 7 --c_out 7 --des Exp --itr 1 --d_model 16 --d_ff 32 --learning_rate 0.01 --train_epochs 10 --patience 10 --batch_size 128 --down_sampling_layers 3 --down_sampling_method avg --down_sampling_window 2
 
 python -u run.py \
   --task_name long_term_forecast \
