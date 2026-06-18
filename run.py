@@ -13,6 +13,7 @@ import numpy as np
 DEFAULT_KNOWN_EXO_FEATURES = [
     'forecast_光伏',
     'forecast_水电',
+    'forecast_火电',
     'forecast_风电',
     'forecast_新能源',
     'forecast_总和',

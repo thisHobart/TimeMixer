@@ -10,6 +10,7 @@ from torch.utils.data import Dataset
 DEFAULT_KNOWN_EXO_FEATURES = [
     'forecast_光伏',
     'forecast_水电',
+    'forecast_火电',
     'forecast_风电',
     'forecast_新能源',
     'forecast_总和',
@@ -24,6 +25,15 @@ DEFAULT_KNOWN_EXO_FEATURES = [
     'cloud_cover',
     'solar_radiation',
 ]
+
+DERIVED_FEATURES = {
+    'forecast_火电': [
+        'forecast_总和',
+        'forecast_新能源',
+        'forecast_水电',
+        'forecast_非市场机组',
+    ],
+}
 
 DEFAULT_UNKNOWN_EXO_FEATURES = [
     'quantity_储能',
@@ -66,6 +76,17 @@ def time_features_from_datetime(datetimes):
     ], axis=1).astype(np.float32)
 
 
+def add_derived_features(df):
+    if all(col in df.columns for col in DERIVED_FEATURES['forecast_火电']):
+        df['forecast_火电'] = (
+            pd.to_numeric(df['forecast_总和'], errors='coerce')
+            - pd.to_numeric(df['forecast_新能源'], errors='coerce')
+            - pd.to_numeric(df['forecast_水电'], errors='coerce')
+            - pd.to_numeric(df['forecast_非市场机组'], errors='coerce')
+        )
+    return df
+
+
 class Dataset_PriceExo(Dataset):
     def __init__(self, args, flag='train'):
         assert flag in ['train', 'val', 'test']
@@ -91,6 +112,7 @@ class Dataset_PriceExo(Dataset):
     def __read_data__(self):
         csv_path = os.path.join(self.root_path, self.data_path)
         df_raw = pd.read_csv(csv_path, encoding='utf-8-sig')
+        df_raw = add_derived_features(df_raw)
         if 'datetime' not in df_raw.columns:
             raise ValueError('Dataset_PriceExo requires a datetime column')
         if self.target not in df_raw.columns:
