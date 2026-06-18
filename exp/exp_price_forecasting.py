@@ -67,7 +67,6 @@ class Exp_Price_Forecast(Exp_Basic):
 
     def train(self, setting):
         train_data, train_loader = self._get_data(flag='train')
-        vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
 
         path = os.path.join(self.args.checkpoints, setting)
@@ -132,13 +131,12 @@ class Exp_Price_Forecast(Exp_Basic):
 
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
-            vali_loss = self.vali(vali_data, vali_loader, criterion)
             test_loss = self.vali(test_data, test_loader, criterion)
 
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
-            loss_history.append([epoch + 1, train_loss, vali_loss, test_loss])
-            early_stopping(vali_loss, self.model, path)
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} EarlyStop Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                epoch + 1, train_steps, train_loss, train_loss, test_loss))
+            loss_history.append([epoch + 1, train_loss, train_loss, test_loss])
+            early_stopping(train_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
                 break
@@ -159,7 +157,7 @@ class Exp_Price_Forecast(Exp_Basic):
             os.makedirs(folder_path)
         with open(folder_path + 'loss.csv', 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow(['epoch', 'train_loss', 'vali_loss', 'test_loss'])
+            writer.writerow(['epoch', 'train_loss', 'early_stop_loss', 'test_loss'])
             writer.writerows(loss_history)
         if loss_history:
             with open(folder_path + 'last_loss.csv', 'w', newline='') as f:
@@ -167,7 +165,7 @@ class Exp_Price_Forecast(Exp_Basic):
                 writer.writerow(['metric', 'value'])
                 writer.writerow(['epoch', loss_history[-1][0]])
                 writer.writerow(['train_loss', loss_history[-1][1]])
-                writer.writerow(['vali_loss', loss_history[-1][2]])
+                writer.writerow(['early_stop_loss', loss_history[-1][2]])
                 writer.writerow(['test_loss', loss_history[-1][3]])
 
     def test(self, setting, test=0):

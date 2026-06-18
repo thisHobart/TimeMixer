@@ -89,7 +89,7 @@ def add_derived_features(df):
 
 class Dataset_PriceExo(Dataset):
     def __init__(self, args, flag='train'):
-        assert flag in ['train', 'val', 'test']
+        assert flag in ['train', 'test']
         self.args = args
         self.flag = flag
         self.seq_len = args.seq_len
@@ -129,13 +129,12 @@ class Dataset_PriceExo(Dataset):
         df_raw[required] = df_raw[required].ffill().bfill().fillna(0.0)
 
         n = len(df_raw)
-        num_train = int(n * 0.7)
         num_test = int(n * 0.2)
-        num_val = n - num_train - num_test
+        num_train = n - num_test
 
-        border1s = [0, num_train - self.seq_len, n - num_test - self.seq_len]
-        border2s = [num_train, num_train + num_val, n]
-        type_map = {'train': 0, 'val': 1, 'test': 2}
+        border1s = [0, n - num_test - self.seq_len]
+        border2s = [num_train, n]
+        type_map = {'train': 0, 'test': 1}
         set_type = type_map[self.flag]
         border1 = max(0, border1s[set_type])
         border2 = border2s[set_type]
