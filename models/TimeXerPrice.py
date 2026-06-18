@@ -270,6 +270,59 @@ class MultiStepHead(nn.Module):
         return pred[:, :self.pred_len].unsqueeze(-1)
 
 
+class FutureAttentionHead(nn.Module):
+    def __init__(self, known_dim, time_dim, d_model, pred_len, n_heads, dropout, factor, output_attention):
+        super(FutureAttentionHead, self).__init__()
+        self.pred_len = pred_len
+        self.future_projection = nn.Linear(known_dim + time_dim, d_model)
+        self.cross_attention = AttentionLayer(
+            FullAttention(
+                mask_flag=False,
+                factor=factor,
+                attention_dropout=dropout,
+                output_attention=output_attention,
+            ),
+            d_model,
+            n_heads,
+        )
+        self.self_attention = AttentionLayer(
+            FullAttention(
+                mask_flag=False,
+                factor=factor,
+                attention_dropout=dropout,
+                output_attention=output_attention,
+            ),
+            d_model,
+            n_heads,
+        )
+        self.norm1 = nn.LayerNorm(d_model)
+        self.norm2 = nn.LayerNorm(d_model)
+        self.norm3 = nn.LayerNorm(d_model)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_model * 2),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model * 2, d_model),
+        )
+        self.projection = nn.Linear(d_model, 1)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, scale_tokens, exo_tokens, batch):
+        future_inputs = torch.cat([batch["known_future_exo"], batch["time_future"]], dim=-1)
+        future_tokens = self.future_projection(future_inputs)
+
+        memory_tokens = torch.cat(scale_tokens + [exo_tokens], dim=1)
+        attended, cross_attn = self.cross_attention(future_tokens, memory_tokens, memory_tokens, attn_mask=None)
+        future_tokens = self.norm1(future_tokens + self.dropout(attended))
+
+        attended, self_attn = self.self_attention(future_tokens, future_tokens, future_tokens, attn_mask=None)
+        future_tokens = self.norm2(future_tokens + self.dropout(attended))
+        future_tokens = self.norm3(future_tokens + self.dropout(self.ffn(future_tokens)))
+
+        pred = self.projection(future_tokens)
+        return pred[:, :self.pred_len, :], [cross_attn, self_attn]
+
+
 class Model(nn.Module):
     """
     TimeXer-style electricity price forecaster.
@@ -327,7 +380,16 @@ class Model(nn.Module):
             )
             for _ in range(configs.e_layers)
         ])
-        self.head = MultiStepHead(self.d_model, self.pred_len, configs.dropout)
+        self.head = FutureAttentionHead(
+            self.known_exo_dim,
+            self.time_dim,
+            self.d_model,
+            self.pred_len,
+            configs.n_heads,
+            configs.dropout,
+            configs.factor,
+            configs.output_attention,
+        )
 
     @staticmethod
     def _require_keys(batch, keys):
@@ -365,9 +427,10 @@ class Model(nn.Module):
                 attentions.append(attn)
             scale_tokens = self.season_trend_mixer(next_tokens)
 
-        pred = self.head(scale_tokens)
+        pred, head_attentions = self.head(scale_tokens, exo_tokens, batch)
         pred = self.price_norm(pred, "denorm")
         if getattr(self.configs, "output_attention", False):
+            attentions.extend(head_attentions)
             return pred, attentions
         return pred
 
