@@ -10,6 +10,7 @@ from torch import optim
 import os
 import time
 import warnings
+import csv
 import numpy as np
 
 warnings.filterwarnings('ignore')
@@ -90,6 +91,7 @@ class Exp_Price_Forecast(Exp_Basic):
         if self.args.use_amp:
             scaler = torch.cuda.amp.GradScaler()
 
+        loss_history = []
         for epoch in range(self.args.train_epochs):
             iter_count = 0
             train_loss = []
@@ -135,6 +137,7 @@ class Exp_Price_Forecast(Exp_Basic):
 
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            loss_history.append([epoch + 1, train_loss, vali_loss, test_loss])
             early_stopping(vali_loss, self.model, path)
             if early_stopping.early_stop:
                 print("Early stopping")
@@ -147,7 +150,25 @@ class Exp_Price_Forecast(Exp_Basic):
 
         best_model_path = os.path.join(path, 'checkpoint.pth')
         self.model.load_state_dict(torch.load(best_model_path))
+        self._save_loss_history(setting, loss_history)
         return self.model
+
+    def _save_loss_history(self, setting, loss_history):
+        folder_path = './results/' + setting + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        with open(folder_path + 'loss.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['epoch', 'train_loss', 'vali_loss', 'test_loss'])
+            writer.writerows(loss_history)
+        if loss_history:
+            with open(folder_path + 'last_loss.csv', 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(['metric', 'value'])
+                writer.writerow(['epoch', loss_history[-1][0]])
+                writer.writerow(['train_loss', loss_history[-1][1]])
+                writer.writerow(['vali_loss', loss_history[-1][2]])
+                writer.writerow(['test_loss', loss_history[-1][3]])
 
     def test(self, setting, test=0):
         test_data, test_loader = self._get_data(flag='test')
@@ -183,5 +204,20 @@ class Exp_Price_Forecast(Exp_Basic):
         np.save(folder_path + 'true_scaled.npy', trues)
         np.save(folder_path + 'pred.npy', pred_real)
         np.save(folder_path + 'true.npy', true_real)
-        np.save(folder_path + 'metrics.npy', np.array([real_mae, real_mse, real_rmse, real_mape, real_mspe]))
+        with open(folder_path + 'metrics.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['metric', 'value'])
+            writer.writerow(['mae', real_mae])
+            writer.writerow(['mse', real_mse])
+            writer.writerow(['rmse', real_rmse])
+            writer.writerow(['mape', real_mape])
+            writer.writerow(['mspe', real_mspe])
+        with open(folder_path + 'metrics_scaled.csv', 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow(['metric', 'value'])
+            writer.writerow(['mae', mae])
+            writer.writerow(['mse', mse])
+            writer.writerow(['rmse', rmse])
+            writer.writerow(['mape', mape])
+            writer.writerow(['mspe', mspe])
         return
