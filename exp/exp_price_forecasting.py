@@ -1,0 +1,187 @@
+from torch.optim import lr_scheduler
+
+from data_provider.data_factory import data_provider
+from exp.exp_basic import Exp_Basic
+from utils.metrics import metric
+from utils.tools import EarlyStopping, adjust_learning_rate
+import torch
+import torch.nn as nn
+from torch import optim
+import os
+import time
+import warnings
+import numpy as np
+
+warnings.filterwarnings('ignore')
+
+
+class Exp_Price_Forecast(Exp_Basic):
+    def __init__(self, args):
+        super(Exp_Price_Forecast, self).__init__(args)
+
+    def _build_model(self):
+        model = self.model_dict[self.args.model].Model(self.args).float()
+        if self.args.use_multi_gpu and self.args.use_gpu:
+            model = nn.DataParallel(model, device_ids=self.args.device_ids)
+        return model
+
+    def _get_data(self, flag):
+        data_set, data_loader = data_provider(self.args, flag)
+        return data_set, data_loader
+
+    def _select_optimizer(self):
+        return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+
+    def _select_criterion(self):
+        return nn.MSELoss()
+
+    def _move_batch_to_device(self, batch):
+        moved = {}
+        for key, value in batch.items():
+            if torch.is_tensor(value):
+                moved[key] = value.float().to(self.device)
+            else:
+                moved[key] = value
+        return moved
+
+    @staticmethod
+    def _unwrap_outputs(outputs):
+        if isinstance(outputs, tuple):
+            return outputs[0]
+        return outputs
+
+    def vali(self, vali_data, vali_loader, criterion):
+        total_loss = []
+        self.model.eval()
+        with torch.no_grad():
+            for batch in vali_loader:
+                batch = self._move_batch_to_device(batch)
+                outputs = self._unwrap_outputs(self.model(batch))
+                loss = criterion(outputs, batch['price_future'])
+                total_loss.append(loss.item())
+
+        total_loss = np.average(total_loss)
+        self.model.train()
+        return total_loss
+
+    def train(self, setting):
+        train_data, train_loader = self._get_data(flag='train')
+        vali_data, vali_loader = self._get_data(flag='val')
+        test_data, test_loader = self._get_data(flag='test')
+
+        path = os.path.join(self.args.checkpoints, setting)
+        if not os.path.exists(path):
+            os.makedirs(path)
+
+        time_now = time.time()
+        train_steps = len(train_loader)
+        early_stopping = EarlyStopping(patience=self.args.patience, verbose=True)
+        model_optim = self._select_optimizer()
+        criterion = self._select_criterion()
+
+        scheduler = lr_scheduler.OneCycleLR(
+            optimizer=model_optim,
+            steps_per_epoch=train_steps,
+            pct_start=self.args.pct_start,
+            epochs=self.args.train_epochs,
+            max_lr=self.args.learning_rate,
+        )
+
+        if self.args.use_amp:
+            scaler = torch.cuda.amp.GradScaler()
+
+        for epoch in range(self.args.train_epochs):
+            iter_count = 0
+            train_loss = []
+            self.model.train()
+            epoch_time = time.time()
+
+            for i, batch in enumerate(train_loader):
+                iter_count += 1
+                model_optim.zero_grad()
+                batch = self._move_batch_to_device(batch)
+
+                if self.args.use_amp:
+                    with torch.cuda.amp.autocast():
+                        outputs = self._unwrap_outputs(self.model(batch))
+                        loss = criterion(outputs, batch['price_future'])
+                    train_loss.append(loss.item())
+                    scaler.scale(loss).backward()
+                    scaler.step(model_optim)
+                    scaler.update()
+                else:
+                    outputs = self._unwrap_outputs(self.model(batch))
+                    loss = criterion(outputs, batch['price_future'])
+                    train_loss.append(loss.item())
+                    loss.backward()
+                    model_optim.step()
+
+                if (i + 1) % 100 == 0:
+                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                    speed = (time.time() - time_now) / iter_count
+                    left_time = speed * ((self.args.train_epochs - epoch) * train_steps - i)
+                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                    iter_count = 0
+                    time_now = time.time()
+
+                if self.args.lradj == 'TST':
+                    adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
+                    scheduler.step()
+
+            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+            train_loss = np.average(train_loss)
+            vali_loss = self.vali(vali_data, vali_loader, criterion)
+            test_loss = self.vali(test_data, test_loader, criterion)
+
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f} Test Loss: {4:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss, test_loss))
+            early_stopping(vali_loss, self.model, path)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
+
+            if self.args.lradj != 'TST':
+                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=True)
+            else:
+                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+
+        best_model_path = os.path.join(path, 'checkpoint.pth')
+        self.model.load_state_dict(torch.load(best_model_path))
+        return self.model
+
+    def test(self, setting, test=0):
+        test_data, test_loader = self._get_data(flag='test')
+        if test:
+            print('loading model')
+            self.model.load_state_dict(torch.load(os.path.join('./checkpoints/' + setting, 'checkpoint.pth')))
+
+        preds = []
+        trues = []
+        self.model.eval()
+        with torch.no_grad():
+            for batch in test_loader:
+                batch = self._move_batch_to_device(batch)
+                outputs = self._unwrap_outputs(self.model(batch))
+                preds.append(outputs.detach().cpu().numpy())
+                trues.append(batch['price_future'].detach().cpu().numpy())
+
+        preds = np.concatenate(preds, axis=0)
+        trues = np.concatenate(trues, axis=0)
+
+        mae, mse, rmse, mape, mspe = metric(preds, trues)
+        print('scaled mse:{}, mae:{}'.format(mse, mae))
+
+        pred_real = test_data.inverse_price(preds)
+        true_real = test_data.inverse_price(trues)
+        real_mae, real_mse, real_rmse, real_mape, real_mspe = metric(pred_real, true_real)
+        print('price mse:{}, mae:{}'.format(real_mse, real_mae))
+
+        folder_path = './results/' + setting + '/'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+        np.save(folder_path + 'pred_scaled.npy', preds)
+        np.save(folder_path + 'true_scaled.npy', trues)
+        np.save(folder_path + 'pred.npy', pred_real)
+        np.save(folder_path + 'true.npy', true_real)
+        np.save(folder_path + 'metrics.npy', np.array([real_mae, real_mse, real_rmse, real_mape, real_mspe]))
+        return

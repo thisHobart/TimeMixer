@@ -5,9 +5,50 @@ from exp.exp_anomaly_detection import Exp_Anomaly_Detection
 from exp.exp_classification import Exp_Classification
 from exp.exp_imputation import Exp_Imputation
 from exp.exp_long_term_forecasting import Exp_Long_Term_Forecast
+from exp.exp_price_forecasting import Exp_Price_Forecast
 from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 import random
 import numpy as np
+
+DEFAULT_KNOWN_EXO_FEATURES = [
+    'forecast_光伏',
+    'forecast_水电',
+    'forecast_风电',
+    'forecast_新能源',
+    'forecast_总和',
+    'forecast_负荷',
+    'forecast_非市场机组',
+    'temperature',
+    'wind_speed_ten',
+    'wind_speed_fifty',
+    'wind_speed_eighty',
+    'wind_speed_hundred',
+    'hour_precipitation',
+    'cloud_cover',
+    'solar_radiation',
+]
+
+DEFAULT_UNKNOWN_EXO_FEATURES = [
+    'quantity_储能',
+    'quantity_风电',
+    'quantity_光伏',
+    'quantity_火电',
+    'quantity_水电',
+    'quantity_总出清电量',
+    'load',
+]
+
+
+def parse_feature_list(value, default_features):
+    if value is None:
+        return list(default_features)
+    value = value.strip()
+    if value == '':
+        return list(default_features)
+    if value.lower() in {'none', 'null', 'empty'}:
+        return []
+    return [item.strip() for item in value.split(',') if item.strip()]
+
 
 fix_seed = 2021
 random.seed(fix_seed)
@@ -34,6 +75,12 @@ parser.add_argument('--target', type=str, default='OT', help='target feature in 
 parser.add_argument('--freq', type=str, default='h',
                     help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly, ms:milliseconds], you can also use more detailed freq like 15min or 3h')
 parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
+parser.add_argument('--known_exo_features', type=str, default=','.join(DEFAULT_KNOWN_EXO_FEATURES),
+                    help='comma-separated known future exogenous features for price_exo; use none for no known exo')
+parser.add_argument('--unknown_exo_features', type=str, default=','.join(DEFAULT_UNKNOWN_EXO_FEATURES),
+                    help='comma-separated unknown future exogenous features for price_exo; use none for no unknown exo')
+parser.add_argument('--price_interval_minutes', type=int, default=15,
+                    help='expected interval in minutes for price_exo continuous windows')
 
 # forecasting task
 parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -74,6 +121,8 @@ parser.add_argument('--down_sampling_method', type=str, default='avg',
                     help='down sampling method, only support avg, max, conv')
 parser.add_argument('--use_future_temporal_feature', type=int, default=0,
                     help='whether to use future_temporal_feature; True 1 False 0')
+parser.add_argument('--price_patch_scales', type=int, nargs='+', default=[4, 8, 16, 32],
+                    help='patch lengths for TimeXerPrice, in data steps; 15min data uses 4,8,16,32 for 1h,2h,4h,8h')
 
 # imputation task
 parser.add_argument('--mask_rate', type=float, default=0.125, help='mask ratio')
@@ -109,6 +158,9 @@ parser.add_argument('--p_hidden_layers', type=int, default=2, help='number of hi
 
 if __name__ == '__main__':
     args = parser.parse_args()
+    args.known_exo_dim = len(parse_feature_list(args.known_exo_features, DEFAULT_KNOWN_EXO_FEATURES))
+    args.unknown_exo_dim = len(parse_feature_list(args.unknown_exo_features, DEFAULT_UNKNOWN_EXO_FEATURES))
+    args.time_dim = 6
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
     if args.use_gpu and args.use_multi_gpu:
@@ -122,6 +174,8 @@ if __name__ == '__main__':
 
     if args.task_name == 'long_term_forecast':
         Exp = Exp_Long_Term_Forecast
+    elif args.task_name == 'price_forecast':
+        Exp = Exp_Price_Forecast
     elif args.task_name == 'short_term_forecast':
         Exp = Exp_Short_Term_Forecast
     elif args.task_name == 'imputation':
