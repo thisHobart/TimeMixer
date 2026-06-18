@@ -372,6 +372,6 @@ class Model(nn.Module):
         return pred
 
     def forward(self, batch):
-        if self.task_name in ["long_term_forecast", "short_term_forecast"]:
+        if self.task_name in ["price_forecast", "long_term_forecast", "short_term_forecast"]:
             return self.forecast(batch)
         raise ValueError("TimeXerPrice only supports forecasting tasks")
