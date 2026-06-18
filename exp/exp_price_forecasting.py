@@ -16,6 +16,59 @@ import numpy as np
 warnings.filterwarnings('ignore')
 
 
+class WeightedHuberLoss(nn.Module):
+    def __init__(self, spike_threshold=50.0, spike_weight=3.0,
+                 short_weight=1.2, mid_weight=1.0, long_weight=0.8,
+                 change_loss_weight=0.3, delta=1.0):
+        super(WeightedHuberLoss, self).__init__()
+        self.spike_threshold = spike_threshold
+        self.spike_weight = spike_weight
+        self.short_weight = short_weight
+        self.mid_weight = mid_weight
+        self.long_weight = long_weight
+        self.change_loss_weight = change_loss_weight
+        self.delta = delta
+
+    def _huber(self, pred, true):
+        error = pred - true
+        abs_error = torch.abs(error)
+        quadratic = torch.minimum(abs_error, torch.tensor(self.delta, device=pred.device, dtype=pred.dtype))
+        linear = abs_error - quadratic
+        return 0.5 * quadratic * quadratic + self.delta * linear
+
+    def _step_weight(self, pred_len, device, dtype):
+        short_len = min(24, pred_len)
+        mid_len = min(24, max(0, pred_len - short_len))
+        long_len = max(0, pred_len - short_len - mid_len)
+        weights = []
+        if short_len:
+            weights.append(torch.full((short_len,), self.short_weight, device=device, dtype=dtype))
+        if mid_len:
+            weights.append(torch.full((mid_len,), self.mid_weight, device=device, dtype=dtype))
+        if long_len:
+            weights.append(torch.full((long_len,), self.long_weight, device=device, dtype=dtype))
+        return torch.cat(weights).view(1, pred_len, 1)
+
+    def _spike_weight(self, true):
+        prev = torch.cat([true[:, :1, :], true[:, :-1, :]], dim=1)
+        change = torch.abs(true - prev)
+        return torch.where(
+            change >= self.spike_threshold,
+            torch.full_like(true, self.spike_weight),
+            torch.ones_like(true),
+        )
+
+    def forward(self, pred, true):
+        pred_len = pred.size(1)
+        weights = self._step_weight(pred_len, pred.device, pred.dtype) * self._spike_weight(true)
+        level_loss = (self._huber(pred, true) * weights).mean()
+
+        pred_diff = pred[:, 1:, :] - pred[:, :-1, :]
+        true_diff = true[:, 1:, :] - true[:, :-1, :]
+        change_loss = self._huber(pred_diff, true_diff).mean()
+        return level_loss + self.change_loss_weight * change_loss
+
+
 class Exp_Price_Forecast(Exp_Basic):
     def __init__(self, args):
         super(Exp_Price_Forecast, self).__init__(args)
@@ -34,7 +87,14 @@ class Exp_Price_Forecast(Exp_Basic):
         return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
 
     def _select_criterion(self):
-        return nn.MSELoss()
+        return WeightedHuberLoss(
+            spike_threshold=40.0,
+            spike_weight=4.5,
+            short_weight=1.5,
+            mid_weight=1.0,
+            long_weight=0.8,
+            change_loss_weight=0.3,
+        )
 
     def _move_batch_to_device(self, batch):
         moved = {}
