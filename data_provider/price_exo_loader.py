@@ -96,6 +96,8 @@ class Dataset_PriceExo(Dataset):
         self.pred_len = args.pred_len
         self.target = getattr(args, 'target', 'price')
         self.expected_minutes = getattr(args, 'price_interval_minutes', 15)
+        self.test_start_hour = getattr(args, 'test_start_hour', 0)
+        self.test_start_minute = getattr(args, 'test_start_minute', 15)
         self.known_features = parse_feature_list(
             getattr(args, 'known_exo_features', None),
             DEFAULT_KNOWN_EXO_FEATURES,
@@ -179,7 +181,12 @@ class Dataset_PriceExo(Dataset):
         valid_starts = []
         for start in range(0, len(datetimes) - total_len + 1):
             end = start + total_len
-            if continuous_edge[start + 1:end].all():
+            if not continuous_edge[start + 1:end].all():
+                continue
+            if self.flag == 'test':
+                forecast_time = datetimes.iloc[start + self.seq_len]
+                if forecast_time.hour != self.test_start_hour or forecast_time.minute != self.test_start_minute:
+                    continue
                 valid_starts.append(start)
         return valid_starts
 

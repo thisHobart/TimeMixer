@@ -82,6 +82,10 @@ parser.add_argument('--unknown_exo_features', type=str, default=','.join(DEFAULT
                     help='comma-separated unknown future exogenous features for price_exo; use none for no unknown exo')
 parser.add_argument('--price_interval_minutes', type=int, default=15,
                     help='expected interval in minutes for price_exo continuous windows')
+parser.add_argument('--test_start_hour', type=int, default=0,
+                    help='forecast start hour for price_exo test windows')
+parser.add_argument('--test_start_minute', type=int, default=15,
+                    help='forecast start minute for price_exo test windows')
 
 # forecasting task
 parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
