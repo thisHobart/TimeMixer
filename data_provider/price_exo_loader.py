@@ -187,7 +187,7 @@ class Dataset_PriceExo(Dataset):
                 forecast_time = datetimes.iloc[start + self.seq_len]
                 if forecast_time.hour != self.test_start_hour or forecast_time.minute != self.test_start_minute:
                     continue
-                valid_starts.append(start)
+            valid_starts.append(start)
         return valid_starts
 
     def __getitem__(self, index):
