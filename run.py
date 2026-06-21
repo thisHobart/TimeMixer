@@ -134,7 +134,7 @@ parser.add_argument('--down_sampling_method', type=str, default='avg',
                     help='down sampling method, only support avg, max, conv')
 parser.add_argument('--use_future_temporal_feature', type=int, default=0,
                     help='whether to use future_temporal_feature; True 1 False 0')
-parser.add_argument('--price_patch_scales', type=int, nargs='+', default=[4, 8, 16, 32],
+parser.add_argument('--price_patch_scales', type=int, nargs='+', default=[4, 16, 96, 672],
                     help='patch lengths for TimeXerPrice, in data steps; 15min data uses 4,8,16,32 for 1h,2h,4h,8h')
 
 # imputation task
