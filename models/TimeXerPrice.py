@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -275,6 +277,11 @@ class FutureAttentionHead(nn.Module):
         super(FutureAttentionHead, self).__init__()
         self.pred_len = pred_len
         self.future_projection = nn.Linear(known_dim + time_dim, d_model)
+        self.register_buffer(
+            "horizon_position_encoding",
+            self._build_horizon_position_encoding(pred_len, d_model),
+            persistent=False,
+        )
         self.cross_attention = AttentionLayer(
             FullAttention(
                 mask_flag=False,
@@ -307,9 +314,21 @@ class FutureAttentionHead(nn.Module):
         self.projection = nn.Linear(d_model, 1)
         self.dropout = nn.Dropout(dropout)
 
+    @staticmethod
+    def _build_horizon_position_encoding(pred_len, d_model):
+        position = torch.arange(pred_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, d_model, 2, dtype=torch.float32) * (-math.log(10000.0) / d_model)
+        )
+        pe = torch.zeros(pred_len, d_model, dtype=torch.float32)
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term[:pe[:, 1::2].size(1)])
+        return pe.unsqueeze(0)
+
     def forward(self, scale_tokens, exo_tokens, batch):
         future_inputs = torch.cat([batch["known_future_exo"], batch["time_future"]], dim=-1)
         future_tokens = self.future_projection(future_inputs)
+        future_tokens = future_tokens + self.horizon_position_encoding[:, :future_tokens.size(1), :]
 
         memory_tokens = torch.cat(scale_tokens + [exo_tokens], dim=1)
         attended, cross_attn = self.cross_attention(future_tokens, memory_tokens, memory_tokens, attn_mask=None)

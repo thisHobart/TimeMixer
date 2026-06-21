@@ -82,10 +82,12 @@ parser.add_argument('--unknown_exo_features', type=str, default=','.join(DEFAULT
                     help='comma-separated unknown future exogenous features for price_exo; use none for no unknown exo')
 parser.add_argument('--price_interval_minutes', type=int, default=15,
                     help='expected interval in minutes for price_exo continuous windows')
-parser.add_argument('--test_start_hour', type=int, default=0,
-                    help='forecast start hour for price_exo test windows')
-parser.add_argument('--test_start_minute', type=int, default=15,
-                    help='forecast start minute for price_exo test windows')
+parser.add_argument('--price_test_size', type=int, default=0,
+                    help='number of final rows held out for price_exo test; <=0 uses pred_len')
+parser.add_argument('--test_start_hour', type=int, default=-1,
+                    help='optional forecast start hour for price_exo test windows; <0 disables filtering')
+parser.add_argument('--test_start_minute', type=int, default=-1,
+                    help='optional forecast start minute for price_exo test windows; <0 disables filtering')
 
 # forecasting task
 parser.add_argument('--seq_len', type=int, default=96, help='input sequence length')
@@ -139,7 +141,7 @@ parser.add_argument('--anomaly_ratio', type=float, default=0.25, help='prior ano
 parser.add_argument('--num_workers', type=int, default=10, help='data loader num workers')
 parser.add_argument('--itr', type=int, default=1, help='experiments times')
 parser.add_argument('--train_epochs', type=int, default=100, help='train epochs')
-parser.add_argument('--batch_size', type=int, default=16, help='batch size of train input data')
+parser.add_argument('--batch_size', type=int, default=32, help='batch size of train input data')
 parser.add_argument('--patience', type=int, default=15, help='early stopping patience')
 parser.add_argument('--learning_rate', type=float, default=0.001, help='optimizer learning rate')
 parser.add_argument('--des', type=str, default='test', help='exp description')

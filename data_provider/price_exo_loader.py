@@ -96,6 +96,7 @@ class Dataset_PriceExo(Dataset):
         self.pred_len = args.pred_len
         self.target = getattr(args, 'target', 'price')
         self.expected_minutes = getattr(args, 'price_interval_minutes', 15)
+        self.test_size = getattr(args, 'price_test_size', 0)
         self.test_start_hour = getattr(args, 'test_start_hour', 0)
         self.test_start_minute = getattr(args, 'test_start_minute', 15)
         self.known_features = parse_feature_list(
@@ -131,8 +132,18 @@ class Dataset_PriceExo(Dataset):
         df_raw[required] = df_raw[required].ffill().bfill().fillna(0.0)
 
         n = len(df_raw)
-        num_test = int(n * 0.2)
+        num_test = self.test_size if self.test_size and self.test_size > 0 else self.pred_len
+        if num_test < self.pred_len:
+            raise ValueError(
+                'price_test_size must be >= pred_len, got {} and {}'.format(num_test, self.pred_len)
+            )
+        if n <= num_test:
+            raise ValueError('price_exo data length must be larger than test size')
         num_train = n - num_test
+        if num_train < self.seq_len:
+            raise ValueError(
+                'not enough training history: train rows {}, seq_len {}'.format(num_train, self.seq_len)
+            )
 
         border1s = [0, n - num_test - self.seq_len]
         border2s = [num_train, n]
@@ -183,7 +194,7 @@ class Dataset_PriceExo(Dataset):
             end = start + total_len
             if not continuous_edge[start + 1:end].all():
                 continue
-            if self.flag == 'test':
+            if self.flag == 'test' and self.test_start_hour >= 0 and self.test_start_minute >= 0:
                 forecast_time = datetimes.iloc[start + self.seq_len]
                 if forecast_time.hour != self.test_start_hour or forecast_time.minute != self.test_start_minute:
                     continue
