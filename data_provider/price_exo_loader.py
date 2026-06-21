@@ -132,7 +132,7 @@ class Dataset_PriceExo(Dataset):
         df_raw[required] = df_raw[required].ffill().bfill().fillna(0.0)
 
         n = len(df_raw)
-        num_test = self.test_size if self.test_size and self.test_size > 0 else self.pred_len
+        num_test = self.test_size if self.test_size and self.test_size > 0 else int(n * 0.2)
         if num_test < self.pred_len:
             raise ValueError(
                 'price_test_size must be >= pred_len, got {} and {}'.format(num_test, self.pred_len)
