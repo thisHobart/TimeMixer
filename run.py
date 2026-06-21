@@ -19,6 +19,12 @@ DEFAULT_KNOWN_EXO_FEATURES = [
     'forecast_总和',
     'forecast_负荷',
     'forecast_非市场机组',
+    'forecast_水电_ratio',
+    'forecast_火电_ratio',
+    'forecast_净负荷',
+    'forecast_火电_minus_水电',
+    'forecast_水电_diff',
+    'forecast_火电_diff',
     'temperature',
     'wind_speed_ten',
     'wind_speed_fifty',
@@ -83,7 +89,7 @@ parser.add_argument('--unknown_exo_features', type=str, default=','.join(DEFAULT
 parser.add_argument('--price_interval_minutes', type=int, default=15,
                     help='expected interval in minutes for price_exo continuous windows')
 parser.add_argument('--price_test_size', type=int, default=0,
-                    help='number of final rows held out for price_exo test; <=0 uses the final 20 percent')
+                    help='number of final rows held out for price_exo test; <=0 uses pred_len')
 parser.add_argument('--test_start_hour', type=int, default=-1,
                     help='optional forecast start hour for price_exo test windows; <0 disables filtering')
 parser.add_argument('--test_start_minute', type=int, default=-1,
