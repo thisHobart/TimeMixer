@@ -16,6 +16,12 @@ DEFAULT_KNOWN_EXO_FEATURES = [
     'forecast_总和',
     'forecast_负荷',
     'forecast_非市场机组',
+    'forecast_水电_ratio',
+    'forecast_火电_ratio',
+    'forecast_净负荷',
+    'forecast_火电_minus_水电',
+    'forecast_水电_diff',
+    'forecast_火电_diff',
     'temperature',
     'wind_speed_ten',
     'wind_speed_fifty',
@@ -43,6 +49,12 @@ DEFAULT_UNKNOWN_EXO_FEATURES = [
     'quantity_水电',
     'quantity_总出清电量',
     'load',
+    'actual_水电_ratio',
+    'actual_火电_ratio',
+    'actual_净负荷',
+    'actual_火电_minus_水电',
+    'actual_水电_diff',
+    'actual_火电_diff',
 ]
 
 
@@ -132,7 +144,7 @@ class Dataset_PriceExo(Dataset):
         df_raw[required] = df_raw[required].ffill().bfill().fillna(0.0)
 
         n = len(df_raw)
-        num_test = self.test_size if self.test_size and self.test_size > 0 else int(n * 0.2)
+        num_test = self.test_size if self.test_size and self.test_size > 0 else int(n * 0.1)
         if num_test < self.pred_len:
             raise ValueError(
                 'price_test_size must be >= pred_len, got {} and {}'.format(num_test, self.pred_len)
