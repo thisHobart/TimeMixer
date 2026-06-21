@@ -90,9 +90,9 @@ parser.add_argument('--price_interval_minutes', type=int, default=15,
                     help='expected interval in minutes for price_exo continuous windows')
 parser.add_argument('--price_test_size', type=int, default=0,
                     help='number of final rows held out for price_exo test; <=0 uses pred_len')
-parser.add_argument('--test_start_hour', type=int, default=-1,
+parser.add_argument('--test_start_hour', type=int, default=0,
                     help='optional forecast start hour for price_exo test windows; <0 disables filtering')
-parser.add_argument('--test_start_minute', type=int, default=-1,
+parser.add_argument('--test_start_minute', type=int, default=15,
                     help='optional forecast start minute for price_exo test windows; <0 disables filtering')
 
 # forecasting task
