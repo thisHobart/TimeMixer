@@ -139,12 +139,11 @@ class Exp_Price_Forecast(Exp_Basic):
         model_optim = self._select_optimizer()
         criterion = self._select_criterion()
 
-        scheduler = lr_scheduler.OneCycleLR(
-            optimizer=model_optim,
-            steps_per_epoch=train_steps,
-            pct_start=self.args.pct_start,
-            epochs=self.args.train_epochs,
-            max_lr=self.args.learning_rate,
+        scheduler = lr_scheduler.ReduceLROnPlateau(
+            model_optim,
+            mode='min',
+            factor=0.5,
+            patience=3,
         )
 
         if self.args.use_amp:
@@ -185,10 +184,6 @@ class Exp_Price_Forecast(Exp_Basic):
                     iter_count = 0
                     time_now = time.time()
 
-                if self.args.lradj == 'TST':
-                    adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=False)
-                    scheduler.step()
-
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)
             test_loss = self.vali(test_data, test_loader, criterion)
@@ -201,10 +196,11 @@ class Exp_Price_Forecast(Exp_Basic):
                 print("Early stopping")
                 break
 
-            if self.args.lradj != 'TST':
-                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=True)
+            if self.args.lradj == 'TST':
+                scheduler.step(test_loss)
+                print('Updating learning rate to {}'.format(model_optim.param_groups[0]['lr']))
             else:
-                print('Updating learning rate to {}'.format(scheduler.get_last_lr()[0]))
+                adjust_learning_rate(model_optim, scheduler, epoch + 1, self.args, printout=True)
 
         best_model_path = os.path.join(path, 'checkpoint.pth')
         self.model.load_state_dict(torch.load(best_model_path))
