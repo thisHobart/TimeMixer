@@ -17,9 +17,9 @@ warnings.filterwarnings('ignore')
 
 
 class WeightedHuberLoss(nn.Module):
-    def __init__(self, spike_threshold=50.0, spike_weight=3.0,
-                 short_weight=1.2, mid_weight=1.0, long_weight=0.8,
-                 change_loss_weight=0.3, delta=1.0):
+    def __init__(self, spike_threshold=0.9, spike_weight=2.5,
+                 short_weight=1.1, mid_weight=1.0, long_weight=0.9,
+                 change_loss_weight=0.2, delta=0.25):
         super(WeightedHuberLoss, self).__init__()
         self.spike_threshold = spike_threshold
         self.spike_weight = spike_weight
