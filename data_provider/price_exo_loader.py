@@ -7,29 +7,26 @@ from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Dataset
 
 
-DEFAULT_KNOWN_EXO_FEATURES = [
-    'forecast_光伏',
-    'forecast_水电',
+DEFAULT_KNOWN_HIST_EXO_FEATURES = [
+    'quantity_火电',
+    'quantity_水电',
+    'actual_水电_ratio',
+    'actual_火电_ratio',
+    'actual_净负荷',
+    'actual_火电_minus_水电',
+    'actual_水电_diff',
+    'actual_火电_diff',
+]
+
+DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
     'forecast_火电',
-    'forecast_风电',
-    'forecast_新能源',
-    'forecast_总和',
-    'forecast_负荷',
-    'forecast_非市场机组',
+    'forecast_水电',
     'forecast_水电_ratio',
     'forecast_火电_ratio',
     'forecast_净负荷',
     'forecast_火电_minus_水电',
     'forecast_水电_diff',
     'forecast_火电_diff',
-    'temperature',
-    'wind_speed_ten',
-    'wind_speed_fifty',
-    'wind_speed_eighty',
-    'wind_speed_hundred',
-    'hour_precipitation',
-    'cloud_cover',
-    'solar_radiation',
 ]
 
 DERIVED_FEATURES = {
@@ -40,17 +37,6 @@ DERIVED_FEATURES = {
         'forecast_非市场机组',
     ],
 }
-
-DEFAULT_UNKNOWN_EXO_FEATURES = [
-    'quantity_储能',
-    'quantity_风电',
-    'quantity_光伏',
-    'quantity_火电',
-    'quantity_水电',
-    'quantity_总出清电量',
-    'load',
-]
-
 
 def parse_feature_list(value, default_features):
     if value is None:
@@ -93,6 +79,16 @@ def add_derived_features(df):
     return df
 
 
+def unique_preserve_order(items):
+    seen = set()
+    result = []
+    for item in items:
+        if item not in seen:
+            result.append(item)
+            seen.add(item)
+    return result
+
+
 class Dataset_PriceExo(Dataset):
     def __init__(self, args, flag='train'):
         assert flag in ['train', 'test']
@@ -105,14 +101,22 @@ class Dataset_PriceExo(Dataset):
         self.test_size = getattr(args, 'price_test_size', 0)
         self.test_start_hour = getattr(args, 'test_start_hour', 0)
         self.test_start_minute = getattr(args, 'test_start_minute', 15)
-        self.known_features = parse_feature_list(
-            getattr(args, 'known_exo_features', None),
-            DEFAULT_KNOWN_EXO_FEATURES,
+        self.known_hist_features = parse_feature_list(
+            getattr(args, 'known_hist_exo_features', None),
+            DEFAULT_KNOWN_HIST_EXO_FEATURES,
         )
-        self.unknown_features = parse_feature_list(
-            getattr(args, 'unknown_exo_features', None),
-            DEFAULT_UNKNOWN_EXO_FEATURES,
+        self.known_future_features = parse_feature_list(
+            getattr(args, 'known_future_exo_features', None),
+            DEFAULT_KNOWN_FUTURE_EXO_FEATURES,
         )
+        if len(self.known_hist_features) != len(self.known_future_features):
+            raise ValueError(
+                'known_hist_exo_features and known_future_exo_features must have the same length, got {} and {}'.format(
+                    len(self.known_hist_features),
+                    len(self.known_future_features),
+                )
+            )
+        self.unknown_features = []
         self.root_path = args.root_path
         self.data_path = args.data_path
 
@@ -127,7 +131,9 @@ class Dataset_PriceExo(Dataset):
         if self.target not in df_raw.columns:
             raise ValueError('target column {} not found'.format(self.target))
 
-        required = [self.target] + self.known_features + self.unknown_features
+        required = unique_preserve_order(
+            [self.target] + self.known_hist_features + self.known_future_features + self.unknown_features
+        )
         missing = [col for col in required if col not in df_raw.columns]
         if missing:
             raise ValueError('columns not found in {}: {}'.format(csv_path, ', '.join(missing)))
@@ -163,9 +169,9 @@ class Dataset_PriceExo(Dataset):
         self.price_scaler.fit(df_raw[[self.target]].iloc[train_slice].values)
 
         self.known_scaler = None
-        if self.known_features:
+        if self.known_hist_features:
             self.known_scaler = StandardScaler()
-            self.known_scaler.fit(df_raw[self.known_features].iloc[train_slice].values)
+            self.known_scaler.fit(df_raw[self.known_hist_features].iloc[train_slice].values)
 
         self.unknown_scaler = None
         if self.unknown_features:
@@ -175,7 +181,8 @@ class Dataset_PriceExo(Dataset):
         df = df_raw.iloc[border1:border2].reset_index(drop=True)
         self.datetime = df['datetime']
         self.price = self.price_scaler.transform(df[[self.target]].values).astype(np.float32)
-        self.known_exo = self._transform_optional(df, self.known_features, self.known_scaler)
+        self.known_hist_exo = self._transform_optional(df, self.known_hist_features, self.known_scaler)
+        self.known_future_exo = self._transform_optional(df, self.known_future_features, self.known_scaler)
         self.unknown_exo = self._transform_optional(df, self.unknown_features, self.unknown_scaler)
         self.time_features = time_features_from_datetime(self.datetime)
         self.valid_starts = self._build_valid_starts(self.datetime)
@@ -218,8 +225,8 @@ class Dataset_PriceExo(Dataset):
         return {
             'price_hist': torch.from_numpy(self.price[start:hist_end]),
             'price_future': torch.from_numpy(self.price[hist_end:future_end]),
-            'known_hist_exo': torch.from_numpy(self.known_exo[start:hist_end]),
-            'known_future_exo': torch.from_numpy(self.known_exo[hist_end:future_end]),
+            'known_hist_exo': torch.from_numpy(self.known_hist_exo[start:hist_end]),
+            'known_future_exo': torch.from_numpy(self.known_future_exo[hist_end:future_end]),
             'unknown_hist_exo': torch.from_numpy(self.unknown_exo[start:hist_end]),
             'unknown_future_mask': torch.from_numpy(unknown_future_mask),
             'time_hist': torch.from_numpy(self.time_features[start:hist_end]),

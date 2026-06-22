@@ -148,9 +148,9 @@ class ExoEncoderWithFuture(nn.Module):
         self.time_dim = time_dim
 
         self.known_projection = nn.Linear(known_dim + time_dim, d_model)
-        self.unknown_projection = nn.Linear(unknown_dim, d_model)
-        self.mask_projection = nn.Linear(unknown_dim, d_model)
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.unknown_projection = nn.Linear(unknown_dim, d_model) if unknown_dim > 0 else None
+        self.mask_projection = nn.Linear(unknown_dim, d_model) if unknown_dim > 0 else None
+        self.mask_token = nn.Parameter(torch.zeros(1, 1, d_model)) if unknown_dim > 0 else None
         self.fusion = nn.Sequential(
             nn.LayerNorm(d_model),
             nn.Linear(d_model, d_model * 2),
@@ -189,9 +189,12 @@ class ExoEncoderWithFuture(nn.Module):
             ], dim=1)
         )
 
-        unknown_hist_tokens = self.unknown_projection(unknown_hist)
-        unknown_future_tokens = self.mask_token + self.mask_projection(unknown_future_mask)
-        unknown_tokens = torch.cat([unknown_hist_tokens, unknown_future_tokens], dim=1)
+        if self.unknown_dim > 0:
+            unknown_hist_tokens = self.unknown_projection(unknown_hist)
+            unknown_future_tokens = self.mask_token + self.mask_projection(unknown_future_mask)
+            unknown_tokens = torch.cat([unknown_hist_tokens, unknown_future_tokens], dim=1)
+        else:
+            unknown_tokens = torch.zeros_like(known_tokens)
 
         exo_tokens = known_tokens + unknown_tokens
         return self.dropout(exo_tokens + self.fusion(exo_tokens))

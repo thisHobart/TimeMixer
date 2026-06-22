@@ -10,39 +10,26 @@ from exp.exp_short_term_forecasting import Exp_Short_Term_Forecast
 import random
 import numpy as np
 
-DEFAULT_KNOWN_EXO_FEATURES = [
-    'forecast_光伏',
-    'forecast_水电',
+DEFAULT_KNOWN_HIST_EXO_FEATURES = [
+    'quantity_火电',
+    'quantity_水电',
+    'actual_水电_ratio',
+    'actual_火电_ratio',
+    'actual_净负荷',
+    'actual_火电_minus_水电',
+    'actual_水电_diff',
+    'actual_火电_diff',
+]
+
+DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
     'forecast_火电',
-    'forecast_风电',
-    'forecast_新能源',
-    'forecast_总和',
-    'forecast_负荷',
-    'forecast_非市场机组',
+    'forecast_水电',
     'forecast_水电_ratio',
     'forecast_火电_ratio',
     'forecast_净负荷',
     'forecast_火电_minus_水电',
     'forecast_水电_diff',
     'forecast_火电_diff',
-    'temperature',
-    'wind_speed_ten',
-    'wind_speed_fifty',
-    'wind_speed_eighty',
-    'wind_speed_hundred',
-    'hour_precipitation',
-    'cloud_cover',
-    'solar_radiation',
-]
-
-DEFAULT_UNKNOWN_EXO_FEATURES = [
-    'quantity_储能',
-    'quantity_风电',
-    'quantity_光伏',
-    'quantity_火电',
-    'quantity_水电',
-    'quantity_总出清电量',
-    'load',
 ]
 
 
@@ -82,17 +69,17 @@ parser.add_argument('--target', type=str, default='OT', help='target feature in 
 parser.add_argument('--freq', type=str, default='h',
                     help='freq for time features encoding, options:[s:secondly, t:minutely, h:hourly, d:daily, b:business days, w:weekly, m:monthly, ms:milliseconds], you can also use more detailed freq like 15min or 3h')
 parser.add_argument('--checkpoints', type=str, default='./checkpoints/', help='location of model checkpoints')
-parser.add_argument('--known_exo_features', type=str, default=','.join(DEFAULT_KNOWN_EXO_FEATURES),
-                    help='comma-separated known future exogenous features for price_exo; use none for no known exo')
-parser.add_argument('--unknown_exo_features', type=str, default=','.join(DEFAULT_UNKNOWN_EXO_FEATURES),
-                    help='comma-separated unknown future exogenous features for price_exo; use none for no unknown exo')
+parser.add_argument('--known_hist_exo_features', type=str, default=','.join(DEFAULT_KNOWN_HIST_EXO_FEATURES),
+                    help='comma-separated historical known exogenous features for price_exo')
+parser.add_argument('--known_future_exo_features', type=str, default=','.join(DEFAULT_KNOWN_FUTURE_EXO_FEATURES),
+                    help='comma-separated future known exogenous features for price_exo')
 parser.add_argument('--price_interval_minutes', type=int, default=15,
                     help='expected interval in minutes for price_exo continuous windows')
-parser.add_argument('--price_test_size', type=int, default=0,
+parser.add_argument('--price_test_size', type=int, default=2679,
                     help='number of final rows held out for price_exo test; <=0 uses pred_len')
-parser.add_argument('--test_start_hour', type=int, default=-1,
+parser.add_argument('--test_start_hour', type=int, default=0,
                     help='optional forecast start hour for price_exo test windows; <0 disables filtering')
-parser.add_argument('--test_start_minute', type=int, default=-1,
+parser.add_argument('--test_start_minute', type=int, default=15,
                     help='optional forecast start minute for price_exo test windows; <0 disables filtering')
 
 # forecasting task
@@ -171,8 +158,23 @@ parser.add_argument('--p_hidden_layers', type=int, default=2, help='number of hi
 
 if __name__ == '__main__':
     args = parser.parse_args()
-    args.known_exo_dim = len(parse_feature_list(args.known_exo_features, DEFAULT_KNOWN_EXO_FEATURES))
-    args.unknown_exo_dim = len(parse_feature_list(args.unknown_exo_features, DEFAULT_UNKNOWN_EXO_FEATURES))
+    args.known_hist_exo_feature_list = parse_feature_list(
+        args.known_hist_exo_features,
+        DEFAULT_KNOWN_HIST_EXO_FEATURES,
+    )
+    args.known_future_exo_feature_list = parse_feature_list(
+        args.known_future_exo_features,
+        DEFAULT_KNOWN_FUTURE_EXO_FEATURES,
+    )
+    if len(args.known_hist_exo_feature_list) != len(args.known_future_exo_feature_list):
+        raise ValueError(
+            'known_hist_exo_features and known_future_exo_features must have the same length, got {} and {}'.format(
+                len(args.known_hist_exo_feature_list),
+                len(args.known_future_exo_feature_list),
+            )
+        )
+    args.known_exo_dim = len(args.known_hist_exo_feature_list)
+    args.unknown_exo_dim = 0
     args.time_dim = 6
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 
@@ -203,23 +205,7 @@ if __name__ == '__main__':
     if args.is_training:
         for ii in range(args.itr):
             # setting record of experiments
-            setting = '{}_{}_{}_{}_{}_sl{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
-                args.task_name,
-                args.model_id,
-                args.comment,
-                args.model,
-                args.data,
-                args.seq_len,
-                args.pred_len,
-                args.d_model,
-                args.n_heads,
-                args.e_layers,
-                args.d_layers,
-                args.d_ff,
-                args.factor,
-                args.embed,
-                args.distil,
-                args.des, ii)
+            setting = args.model_id
 
             exp = Exp(args)  # set experiments
             print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
@@ -230,23 +216,7 @@ if __name__ == '__main__':
             torch.cuda.empty_cache()
     else:
         ii = 0
-        setting = '{}_{}_{}_{}_{}_sl{}_pl{}_dm{}_nh{}_el{}_dl{}_df{}_fc{}_eb{}_dt{}_{}_{}'.format(
-            args.task_name,
-            args.model_id,
-            args.comment, 
-            args.model,
-            args.data,
-            args.seq_len,
-            args.pred_len,
-            args.d_model,
-            args.n_heads,
-            args.e_layers,
-            args.d_layers,
-            args.d_ff,
-            args.factor,
-            args.embed,
-            args.distil,
-            args.des, ii)
+        setting = args.model_id
 
         exp = Exp(args)  # set experiments
         print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
