@@ -19,6 +19,10 @@ DEFAULT_KNOWN_HIST_EXO_FEATURES = [
     'actual_火电_minus_水电',
     'actual_水电_diff',
     'actual_火电_diff',
+    'price_lag_96',
+    'price_lag_192',
+    'price_lag_672',
+    'price_mean_lag_96_192_672',
 ]
 
 DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
@@ -30,6 +34,10 @@ DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
     'forecast_火电_minus_水电',
     'forecast_水电_diff',
     'forecast_火电_diff',
+    'price_lag_96',
+    'price_lag_192',
+    'price_lag_672',
+    'price_mean_lag_96_192_672',
 ]
 
 
@@ -174,7 +182,6 @@ if __name__ == '__main__':
             )
         )
     args.known_exo_dim = len(args.known_hist_exo_feature_list)
-    args.unknown_exo_dim = 0
     args.time_dim = 6
     args.use_gpu = True if torch.cuda.is_available() and args.use_gpu else False
 

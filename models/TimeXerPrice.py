@@ -141,16 +141,12 @@ class SeasonTrendMixer(nn.Module):
 
 
 class ExoEncoderWithFuture(nn.Module):
-    def __init__(self, known_dim, unknown_dim, time_dim, d_model, dropout):
+    def __init__(self, known_dim, time_dim, d_model, dropout):
         super(ExoEncoderWithFuture, self).__init__()
         self.known_dim = known_dim
-        self.unknown_dim = unknown_dim
         self.time_dim = time_dim
 
         self.known_projection = nn.Linear(known_dim + time_dim, d_model)
-        self.unknown_projection = nn.Linear(unknown_dim, d_model) if unknown_dim > 0 else None
-        self.mask_projection = nn.Linear(unknown_dim, d_model) if unknown_dim > 0 else None
-        self.mask_token = nn.Parameter(torch.zeros(1, 1, d_model)) if unknown_dim > 0 else None
         self.fusion = nn.Sequential(
             nn.LayerNorm(d_model),
             nn.Linear(d_model, d_model * 2),
@@ -170,15 +166,11 @@ class ExoEncoderWithFuture(nn.Module):
     def forward(self, batch):
         known_hist = batch["known_hist_exo"]
         known_future = batch["known_future_exo"]
-        unknown_hist = batch["unknown_hist_exo"]
-        unknown_future_mask = batch["unknown_future_mask"]
         time_hist = batch["time_hist"]
         time_future = batch["time_future"]
 
         self._check_dim("known_hist_exo", known_hist, self.known_dim)
         self._check_dim("known_future_exo", known_future, self.known_dim)
-        self._check_dim("unknown_hist_exo", unknown_hist, self.unknown_dim)
-        self._check_dim("unknown_future_mask", unknown_future_mask, self.unknown_dim)
         self._check_dim("time_hist", time_hist, self.time_dim)
         self._check_dim("time_future", time_future, self.time_dim)
 
@@ -189,15 +181,7 @@ class ExoEncoderWithFuture(nn.Module):
             ], dim=1)
         )
 
-        if self.unknown_dim > 0:
-            unknown_hist_tokens = self.unknown_projection(unknown_hist)
-            unknown_future_tokens = self.mask_token + self.mask_projection(unknown_future_mask)
-            unknown_tokens = torch.cat([unknown_hist_tokens, unknown_future_tokens], dim=1)
-        else:
-            unknown_tokens = torch.zeros_like(known_tokens)
-
-        exo_tokens = known_tokens + unknown_tokens
-        return self.dropout(exo_tokens + self.fusion(exo_tokens))
+        return self.dropout(known_tokens + self.fusion(known_tokens))
 
 
 class PriceExoCrossAttention(nn.Module):
@@ -353,8 +337,6 @@ class Model(nn.Module):
         price_hist: [B, seq_len, 1]
         known_hist_exo: [B, seq_len, known_exo_dim]
         known_future_exo: [B, pred_len, known_exo_dim]
-        unknown_hist_exo: [B, seq_len, unknown_exo_dim]
-        unknown_future_mask: [B, pred_len, unknown_exo_dim]
         time_hist: [B, seq_len, time_dim]
         time_future: [B, pred_len, time_dim]
     """
@@ -368,7 +350,6 @@ class Model(nn.Module):
         self.d_model = configs.d_model
 
         self.known_exo_dim = getattr(configs, "known_exo_dim", 15)
-        self.unknown_exo_dim = getattr(configs, "unknown_exo_dim", 7)
         self.time_dim = getattr(configs, "time_dim", 4)
         self.patch_scales = getattr(configs, "price_patch_scales", [4, 8, 16, 32])
 
@@ -387,7 +368,6 @@ class Model(nn.Module):
         )
         self.exo_encoder = ExoEncoderWithFuture(
             self.known_exo_dim,
-            self.unknown_exo_dim,
             self.time_dim,
             self.d_model,
             configs.dropout,
@@ -424,8 +404,6 @@ class Model(nn.Module):
             "price_hist",
             "known_hist_exo",
             "known_future_exo",
-            "unknown_hist_exo",
-            "unknown_future_mask",
             "time_hist",
             "time_future",
         ]

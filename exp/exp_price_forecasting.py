@@ -20,11 +20,22 @@ warnings.filterwarnings('ignore')
 plt.switch_backend('agg')
 
 
+DEFAULT_LOSS_PARAMS = {
+    'high_threshold': 300.0,
+    'low_threshold': 50.0,
+    'delta': 1.0,
+    'extreme_weight': 2.0,
+    'high_under_weight': 2.5,
+    'low_over_weight': 2.5,
+    'max_dynamic_weight': 5.0,
+    'change_loss_weight': 0.2,
+}
+
+
 class WeightedHuberLoss(nn.Module):
-    def __init__(self, high_threshold=300.0, low_threshold=50.0,
-                 delta=1.0, extreme_weight=2.0,
-                 high_under_weight=2.5, low_over_weight=2.5,
-                 max_dynamic_weight=5.0, change_loss_weight=0.2,
+    def __init__(self, high_threshold, low_threshold, delta,
+                 extreme_weight, high_under_weight, low_over_weight,
+                 max_dynamic_weight, change_loss_weight,
                  price_mean=None, price_scale=None):
         super(WeightedHuberLoss, self).__init__()
         self.high_threshold = high_threshold
@@ -105,7 +116,7 @@ class Exp_Price_Forecast(Exp_Basic):
         return data_set, data_loader
 
     def _select_optimizer(self):
-        return optim.Adam(self.model.parameters(), lr=self.args.learning_rate)
+        return optim.AdamW(self.model.parameters(), lr=self.args.learning_rate, weight_decay=1e-4)
 
     def _select_criterion(self, price_scaler=None):
         price_mean = None
@@ -114,14 +125,7 @@ class Exp_Price_Forecast(Exp_Basic):
             price_mean = float(price_scaler.mean_[0])
             price_scale = float(price_scaler.scale_[0])
         return WeightedHuberLoss(
-            high_threshold=300.0,
-            low_threshold=50.0,
-            delta=1.0,
-            extreme_weight=2.0,
-            high_under_weight=2.5,
-            low_over_weight=2.5,
-            max_dynamic_weight=5.0,
-            change_loss_weight=0.2,
+            **DEFAULT_LOSS_PARAMS,
             price_mean=price_mean,
             price_scale=price_scale,
         )
@@ -327,10 +331,13 @@ class Exp_Price_Forecast(Exp_Basic):
             ['test_start_minute', args.test_start_minute],
             ['price_interval_minutes', args.price_interval_minutes],
             ['known_exo_dim', getattr(args, 'known_exo_dim', '')],
-            ['unknown_exo_dim', getattr(args, 'unknown_exo_dim', '')],
             ['known_hist_exo_features', getattr(args, 'known_hist_exo_features', '')],
             ['known_future_exo_features', getattr(args, 'known_future_exo_features', '')],
+            [],
+            ['loss_config', 'value'],
+            ['loss_name', WeightedHuberLoss.__name__],
         ]
+        rows.extend([['loss_{}'.format(name), value] for name, value in DEFAULT_LOSS_PARAMS.items()])
         return rows
 
     def test(self, setting, test=0):

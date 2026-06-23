@@ -16,6 +16,10 @@ DEFAULT_KNOWN_HIST_EXO_FEATURES = [
     'actual_火电_minus_水电',
     'actual_水电_diff',
     'actual_火电_diff',
+    'price_lag_96',
+    'price_lag_192',
+    'price_lag_672',
+    'price_mean_lag_96_192_672',
 ]
 
 DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
@@ -27,15 +31,17 @@ DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
     'forecast_火电_minus_水电',
     'forecast_水电_diff',
     'forecast_火电_diff',
+    'price_lag_96',
+    'price_lag_192',
+    'price_lag_672',
+    'price_mean_lag_96_192_672',
 ]
 
-DERIVED_FEATURES = {
-    'forecast_火电': [
-        'forecast_总和',
-        'forecast_新能源',
-        'forecast_水电',
-        'forecast_非市场机组',
-    ],
+PRICE_LAG_FEATURES = {
+    'price_lag_96',
+    'price_lag_192',
+    'price_lag_672',
+    'price_mean_lag_96_192_672',
 }
 
 def parse_feature_list(value, default_features):
@@ -66,17 +72,6 @@ def time_features_from_datetime(datetimes):
         np.sin(dow_angle),
         np.cos(dow_angle),
     ], axis=1).astype(np.float32)
-
-
-def add_derived_features(df):
-    if all(col in df.columns for col in DERIVED_FEATURES['forecast_火电']):
-        df['forecast_火电'] = (
-            pd.to_numeric(df['forecast_总和'], errors='coerce')
-            - pd.to_numeric(df['forecast_新能源'], errors='coerce')
-            - pd.to_numeric(df['forecast_水电'], errors='coerce')
-            - pd.to_numeric(df['forecast_非市场机组'], errors='coerce')
-        )
-    return df
 
 
 def unique_preserve_order(items):
@@ -116,7 +111,6 @@ class Dataset_PriceExo(Dataset):
                     len(self.known_future_features),
                 )
             )
-        self.unknown_features = []
         self.root_path = args.root_path
         self.data_path = args.data_path
 
@@ -125,14 +119,13 @@ class Dataset_PriceExo(Dataset):
     def __read_data__(self):
         csv_path = os.path.join(self.root_path, self.data_path)
         df_raw = pd.read_csv(csv_path, encoding='utf-8-sig')
-        df_raw = add_derived_features(df_raw)
         if 'datetime' not in df_raw.columns:
             raise ValueError('Dataset_PriceExo requires a datetime column')
         if self.target not in df_raw.columns:
             raise ValueError('target column {} not found'.format(self.target))
 
         required = unique_preserve_order(
-            [self.target] + self.known_hist_features + self.known_future_features + self.unknown_features
+            [self.target] + self.known_hist_features + self.known_future_features
         )
         missing = [col for col in required if col not in df_raw.columns]
         if missing:
@@ -141,6 +134,14 @@ class Dataset_PriceExo(Dataset):
         df_raw['datetime'] = pd.to_datetime(df_raw['datetime'])
         df_raw = df_raw.sort_values('datetime').reset_index(drop=True)
         df_raw[required] = df_raw[required].apply(pd.to_numeric, errors='coerce')
+        lag_features = [col for col in required if col in PRICE_LAG_FEATURES]
+        if lag_features and df_raw[lag_features].isna().any().any():
+            raise ValueError(
+                'price lag feature columns contain missing values: {}. '
+                'Regenerate the dataset with utils/datasets_features.py so rows without full lag history are dropped.'.format(
+                    ', '.join(lag_features)
+                )
+            )
         df_raw[required] = df_raw[required].ffill().bfill().fillna(0.0)
 
         n = len(df_raw)
@@ -173,17 +174,11 @@ class Dataset_PriceExo(Dataset):
             self.known_scaler = StandardScaler()
             self.known_scaler.fit(df_raw[self.known_hist_features].iloc[train_slice].values)
 
-        self.unknown_scaler = None
-        if self.unknown_features:
-            self.unknown_scaler = StandardScaler()
-            self.unknown_scaler.fit(df_raw[self.unknown_features].iloc[train_slice].values)
-
         df = df_raw.iloc[border1:border2].reset_index(drop=True)
         self.datetime = df['datetime']
         self.price = self.price_scaler.transform(df[[self.target]].values).astype(np.float32)
         self.known_hist_exo = self._transform_optional(df, self.known_hist_features, self.known_scaler)
         self.known_future_exo = self._transform_optional(df, self.known_future_features, self.known_scaler)
-        self.unknown_exo = self._transform_optional(df, self.unknown_features, self.unknown_scaler)
         self.time_features = time_features_from_datetime(self.datetime)
         self.valid_starts = self._build_valid_starts(self.datetime)
 
@@ -219,16 +214,11 @@ class Dataset_PriceExo(Dataset):
         hist_end = start + self.seq_len
         future_end = hist_end + self.pred_len
 
-        unknown_dim = self.unknown_exo.shape[-1]
-        unknown_future_mask = np.ones((self.pred_len, unknown_dim), dtype=np.float32)
-
         return {
             'price_hist': torch.from_numpy(self.price[start:hist_end]),
             'price_future': torch.from_numpy(self.price[hist_end:future_end]),
             'known_hist_exo': torch.from_numpy(self.known_hist_exo[start:hist_end]),
             'known_future_exo': torch.from_numpy(self.known_future_exo[hist_end:future_end]),
-            'unknown_hist_exo': torch.from_numpy(self.unknown_exo[start:hist_end]),
-            'unknown_future_mask': torch.from_numpy(unknown_future_mask),
             'time_hist': torch.from_numpy(self.time_features[start:hist_end]),
             'time_future': torch.from_numpy(self.time_features[hist_end:future_end]),
         }

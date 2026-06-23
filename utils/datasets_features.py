@@ -1,3 +1,24 @@
+
+
+# 派生变量	原始字段公式
+# forecast_火电	原始字段
+# forecast_水电_ratio	forecast_水电 / forecast_负荷
+# forecast_火电_ratio	forecast_火电 / forecast_负荷
+# forecast_净负荷	forecast_负荷 - forecast_水电
+# forecast_火电_minus_水电	forecast_火电 - forecast_水电
+# forecast_水电_diff	forecast_水电[t] - forecast_水电[t-1]
+# forecast_火电_diff	forecast_火电[t] - forecast_火电[t-1]
+#
+# 实际侧派生变量：
+#
+# 派生变量	原始字段公式
+# actual_水电_ratio	quantity_水电 / load
+# actual_火电_ratio	quantity_火电 / load
+# actual_净负荷	load - quantity_水电
+# actual_火电_minus_水电	quantity_火电 - quantity_水电
+# actual_水电_diff	quantity_水电[t] - quantity_水电[t-1]
+# actual_火电_diff	quantity_火电[t] - quantity_火电[t-1]
+
 from pathlib import Path
 
 import numpy as np
@@ -12,7 +33,15 @@ CURRENT_FILE = Path(__file__).resolve()
 PROJECT_ROOT = CURRENT_FILE.parents[1]
 
 INPUT_PATH = PROJECT_ROOT / "dataset" / "datasets.csv"
-OUTPUT_PATH = PROJECT_ROOT / "dataset" / "datasets_power_features.csv"
+OUTPUT_PATH = PROJECT_ROOT / "dataset" / "datasets_power_features1.csv"
+
+PRICE_LAG_FEATURES = [
+    "price_lag_96",
+    "price_lag_192",
+    "price_lag_672",
+    "price_mean_lag_96_192_672",
+]
+PRICE_LAGS = [96, 192, 672]
 
 
 # =========================
@@ -61,19 +90,12 @@ def add_forecast_power_features(df: pd.DataFrame) -> pd.DataFrame:
     """
     构造预测侧火电、水电结构特征。
 
-    原始数据中没有 forecast_火电，需要由以下字段计算：
-
-        forecast_火电 = forecast_总和 - forecast_新能源 - forecast_水电 - forecast_非市场机组
-
     需要字段:
         forecast_负荷
-        forecast_总和
-        forecast_新能源
         forecast_水电
-        forecast_非市场机组
+        forecast_火电
 
     生成字段:
-        forecast_火电
         forecast_水电_ratio
         forecast_火电_ratio
         forecast_净负荷
@@ -84,46 +106,36 @@ def add_forecast_power_features(df: pd.DataFrame) -> pd.DataFrame:
 
     required_cols = [
         "forecast_负荷",
-        "forecast_总和",
-        "forecast_新能源",
         "forecast_水电",
-        "forecast_非市场机组",
+        "forecast_火电",
     ]
 
     check_required_columns(df, required_cols)
 
     df = df.copy()
 
-    # 1. 计算预测火电
-    df["forecast_火电"] = (
-        df["forecast_总和"]
-        - df["forecast_新能源"]
-        - df["forecast_水电"]
-        - df["forecast_非市场机组"]
-    )
-
-    # 2. 预测水电 / 预测负荷
+    # 1. 预测水电 / 预测负荷
     df["forecast_水电_ratio"] = safe_divide(
         df["forecast_水电"],
         df["forecast_负荷"],
     )
 
-    # 3. 预测火电 / 预测负荷
+    # 2. 预测火电 / 预测负荷
     df["forecast_火电_ratio"] = safe_divide(
         df["forecast_火电"],
         df["forecast_负荷"],
     )
 
-    # 4. 预测负荷 - 预测水电
+    # 3. 预测负荷 - 预测水电
     df["forecast_净负荷"] = df["forecast_负荷"] - df["forecast_水电"]
 
-    # 5. 预测火电 - 预测水电
+    # 4. 预测火电 - 预测水电
     df["forecast_火电_minus_水电"] = df["forecast_火电"] - df["forecast_水电"]
 
-    # 6. 预测水电变化量
+    # 5. 预测水电变化量
     df["forecast_水电_diff"] = df["forecast_水电"].diff().fillna(0)
 
-    # 7. 预测火电变化量
+    # 6. 预测火电变化量
     df["forecast_火电_diff"] = df["forecast_火电"].diff().fillna(0)
 
     return df
@@ -187,7 +199,46 @@ def add_actual_power_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================
-# 5. 构造时间特征
+# 5. 构造电价滞后特征
+# =========================
+def add_price_lag_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    构造电价滞后特征。
+
+    15 分钟粒度下:
+        price_lag_96: 前一天同一时刻电价
+        price_lag_192: 前两天同一时刻电价
+        price_lag_672: 前一周同一时刻电价
+    """
+
+    required_cols = [
+        "datetime",
+        "price",
+    ]
+    check_required_columns(df, required_cols)
+
+    df = df.copy()
+    df["datetime"] = pd.to_datetime(df["datetime"])
+    df = df.sort_values("datetime").reset_index(drop=True)
+    df["price"] = pd.to_numeric(df["price"], errors="coerce")
+
+    for lag in PRICE_LAGS:
+        df[f"price_lag_{lag}"] = df["price"].shift(lag)
+
+    df["price_mean_lag_96_192_672"] = df[
+        ["price_lag_96", "price_lag_192", "price_lag_672"]
+    ].mean(axis=1)
+
+    original_rows = len(df)
+    df = df.dropna(subset=PRICE_LAG_FEATURES).reset_index(drop=True)
+    dropped_rows = original_rows - len(df)
+    print(f"电价滞后特征已构造，删除前 {dropped_rows} 行无完整历史的数据。")
+
+    return df
+
+
+# =========================
+# 6. 构造时间特征
 # =========================
 def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -233,7 +284,7 @@ def add_time_features(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================
-# 6. 清理异常值
+# 7. 清理异常值
 # =========================
 def clean_feature_values(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -262,7 +313,7 @@ def clean_feature_values(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =========================
-# 7. 主处理流程
+# 8. 主处理流程
 # =========================
 def build_power_features():
     print("=" * 60)
@@ -279,6 +330,7 @@ def build_power_features():
     print(f"原始字段: {list(df.columns)}")
 
     df = add_time_features(df)
+    df = add_price_lag_features(df)
     df = add_forecast_power_features(df)
     df = add_actual_power_features(df)
     df = clean_feature_values(df)
@@ -315,6 +367,10 @@ def build_power_features():
     ]
 
     for col in actual_feature_cols:
+        print(f"  - {col}")
+
+    print("\n电价滞后新增特征:")
+    for col in PRICE_LAG_FEATURES:
         print(f"  - {col}")
 
     print("=" * 60)
