@@ -13,6 +13,7 @@ import numpy as np
 DEFAULT_KNOWN_HIST_EXO_FEATURES = [
     'quantity_火电',
     'quantity_水电',
+    'quantity_光伏',
     'actual_水电_ratio',
     'actual_火电_ratio',
     'actual_净负荷',
@@ -28,6 +29,7 @@ DEFAULT_KNOWN_HIST_EXO_FEATURES = [
 DEFAULT_KNOWN_FUTURE_EXO_FEATURES = [
     'forecast_火电',
     'forecast_水电',
+    'forecast_光伏',
     'forecast_水电_ratio',
     'forecast_火电_ratio',
     'forecast_净负荷',
